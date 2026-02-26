@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { products, recommendations, type Product } from "@/data/mockData";
-import { Search, Plus, Edit, Trash2, Sparkles } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { Search, Plus, Edit, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,16 +14,47 @@ import {
 
 const ProductsPage = () => {
   const [search, setSearch] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  const filtered = products.filter((p) =>
-    p.name.includes(search) || p.category.includes(search)
-  );
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data } = await supabase.from("products").select("*, categories(name)");
+      return data ?? [];
+    },
+  });
 
-  const getRecommendations = (productId: number) => {
-    const recIds = recommendations[productId] || [];
-    return recIds.map((id) => products.find((p) => p.id === id)).filter(Boolean) as Product[];
+  const { data: recommendations = [] } = useQuery({
+    queryKey: ["product_recommendations"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("product_recommendations")
+        .select("*, recommended:products!product_recommendations_recommended_product_id_fkey(id, name, emoji, price)")
+        .order("frequency", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const filtered = products.filter((p) => {
+    const catName = (p as any).categories?.name ?? "";
+    return p.name.includes(search) || catName.includes(search);
+  });
+
+  const getRecommendations = (productId: string) => {
+    return recommendations
+      .filter((r) => r.product_id === productId)
+      .map((r) => r.recommended)
+      .filter(Boolean);
   };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout title="إدارة المنتجات">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="إدارة المنتجات">
@@ -60,16 +92,18 @@ const ProductsPage = () => {
               <TableRow key={product.id} className="hover:bg-secondary/30 transition-colors">
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">{product.image}</span>
+                    <span className="text-2xl">{product.emoji}</span>
                     <span className="font-medium text-foreground">{product.name}</span>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="bg-secondary px-2.5 py-1 rounded-full text-xs text-muted-foreground">{product.category}</span>
+                  <span className="bg-secondary px-2.5 py-1 rounded-full text-xs text-muted-foreground">
+                    {(product as any).categories?.name ?? "—"}
+                  </span>
                 </TableCell>
                 <TableCell className="font-medium text-foreground">{product.price} ر.س</TableCell>
                 <TableCell>
-                  {product.discount > 0 ? (
+                  {Number(product.discount) > 0 ? (
                     <span className="text-success font-medium text-sm">{product.discount}%</span>
                   ) : (
                     <span className="text-muted-foreground text-sm">—</span>
@@ -85,11 +119,7 @@ const ProductsPage = () => {
                   <div className="flex items-center gap-1">
                     <Dialog>
                       <DialogTrigger asChild>
-                        <button
-                          onClick={() => setSelectedProduct(product)}
-                          className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors"
-                          title="المنتجات المقترحة"
-                        >
+                        <button className="p-2 rounded-lg hover:bg-primary/10 text-primary transition-colors" title="المنتجات المقترحة">
                           <Sparkles className="h-4 w-4" />
                         </button>
                       </DialogTrigger>
@@ -101,15 +131,18 @@ const ProductsPage = () => {
                           </DialogTitle>
                         </DialogHeader>
                         <div className="space-y-3 mt-4">
-                          {getRecommendations(product.id).map((rec) => (
+                          {getRecommendations(product.id).map((rec: any) => (
                             <div key={rec.id} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
-                              <span className="text-2xl">{rec.image}</span>
+                              <span className="text-2xl">{rec.emoji}</span>
                               <div>
                                 <p className="font-medium text-foreground text-sm">{rec.name}</p>
                                 <p className="text-xs text-muted-foreground">{rec.price} ر.س</p>
                               </div>
                             </div>
                           ))}
+                          {getRecommendations(product.id).length === 0 && (
+                            <p className="text-muted-foreground text-sm text-center py-4">لا توجد توصيات بعد</p>
+                          )}
                         </div>
                       </DialogContent>
                     </Dialog>

@@ -1,10 +1,11 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { customers, products, recommendations } from "@/data/mockData";
-import { Crown, Medal, Award, Star, Sparkles } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { Crown, Medal, Award, Star, Sparkles, Loader2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
-const tierConfig = {
+const tierConfig: Record<string, { label: string; icon: any; className: string }> = {
   platinum: { label: "بلاتينيوم", icon: Crown, className: "bg-primary/10 text-primary" },
   gold: { label: "ذهبي", icon: Medal, className: "bg-warning/10 text-warning" },
   silver: { label: "فضي", icon: Award, className: "bg-muted text-muted-foreground" },
@@ -12,12 +13,31 @@ const tierConfig = {
 };
 
 const CustomersPage = () => {
-  // Simple recommendation: top-selling products the customer might like
-  const getCustomerRecommendations = (customerId: number) => {
-    // Simulate based on customer tier — in real app would use purchase history
-    const topProducts = [...products].sort((a, b) => b.sold - a.sold).slice(0, 3);
-    return topProducts;
-  };
+  const { data: customers = [], isLoading } = useQuery({
+    queryKey: ["customers"],
+    queryFn: async () => {
+      const { data } = await supabase.from("customers").select("*");
+      return data ?? [];
+    },
+  });
+
+  const { data: topProducts = [] } = useQuery({
+    queryKey: ["top_products"],
+    queryFn: async () => {
+      const { data } = await supabase.from("products").select("id, name, emoji, price, sold").order("sold", { ascending: false }).limit(3);
+      return data ?? [];
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <DashboardLayout title="إدارة العملاء">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="إدارة العملاء">
@@ -53,7 +73,7 @@ const CustomersPage = () => {
           </TableHeader>
           <TableBody>
             {customers.map((customer) => {
-              const tier = tierConfig[customer.tier];
+              const tier = tierConfig[customer.tier] ?? tierConfig.bronze;
               const TierIcon = tier.icon;
               return (
                 <TableRow key={customer.id} className="hover:bg-secondary/30 transition-colors">
@@ -69,9 +89,9 @@ const CustomersPage = () => {
                       {tier.label}
                     </span>
                   </TableCell>
-                  <TableCell className="font-medium text-foreground">{customer.totalOrders}</TableCell>
-                  <TableCell className="font-bold text-foreground">{customer.totalSpent.toLocaleString()} ر.س</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{customer.joinDate}</TableCell>
+                  <TableCell className="font-medium text-foreground">{customer.total_orders}</TableCell>
+                  <TableCell className="font-bold text-foreground">{Number(customer.total_spent).toLocaleString()} ر.س</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{customer.join_date}</TableCell>
                   <TableCell>
                     <Dialog>
                       <DialogTrigger asChild>
@@ -87,9 +107,9 @@ const CustomersPage = () => {
                           </DialogTitle>
                         </DialogHeader>
                         <div className="space-y-3 mt-4">
-                          {getCustomerRecommendations(customer.id).map((p) => (
+                          {topProducts.map((p) => (
                             <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50">
-                              <span className="text-2xl">{p.image}</span>
+                              <span className="text-2xl">{p.emoji}</span>
                               <div className="flex-1">
                                 <p className="font-medium text-foreground text-sm">{p.name}</p>
                                 <p className="text-xs text-muted-foreground">{p.price} ر.س — {p.sold} مبيع</p>

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { orders } from "@/data/mockData";
-import { Search, Filter } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { Search, Filter, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -26,11 +27,29 @@ const OrdersPage = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
+  const { data: orders = [], isLoading } = useQuery({
+    queryKey: ["orders"],
+    queryFn: async () => {
+      const { data } = await supabase.from("orders").select("*").order("order_date", { ascending: false });
+      return data ?? [];
+    },
+  });
+
   const filtered = orders.filter((o) => {
-    const matchSearch = o.customer.includes(search) || o.id.includes(search);
+    const matchSearch = o.customer_name.includes(search) || o.order_number.includes(search);
     const matchStatus = statusFilter === "all" || o.status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  if (isLoading) {
+    return (
+      <DashboardLayout title="إدارة الطلبات">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="إدارة الطلبات">
@@ -75,15 +94,15 @@ const OrdersPage = () => {
           <TableBody>
             {filtered.map((order) => (
               <TableRow key={order.id} className="hover:bg-secondary/30 transition-colors">
-                <TableCell className="font-mono text-sm text-primary font-medium">{order.id}</TableCell>
+                <TableCell className="font-mono text-sm text-primary font-medium">{order.order_number}</TableCell>
                 <TableCell>
                   <div>
-                    <p className="font-medium text-foreground text-sm">{order.customer}</p>
-                    <p className="text-xs text-muted-foreground">{order.email}</p>
+                    <p className="font-medium text-foreground text-sm">{order.customer_name}</p>
+                    <p className="text-xs text-muted-foreground">{order.customer_email}</p>
                   </div>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{order.date}</TableCell>
-                <TableCell className="text-sm text-foreground">{order.items} منتج</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{order.order_date}</TableCell>
+                <TableCell className="text-sm text-foreground">{order.items_count} منتج</TableCell>
                 <TableCell className="font-bold text-foreground">{order.total} ر.س</TableCell>
                 <TableCell>
                   <span className={`text-xs font-medium px-3 py-1 rounded-full ${statusStyles[order.status]}`}>
