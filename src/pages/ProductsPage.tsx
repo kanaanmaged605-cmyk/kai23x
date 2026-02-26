@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, Plus, Edit, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,34 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ProductForm } from "@/components/ProductForm";
+import { useToast } from "@/hooks/use-toast";
 
 const ProductsPage = () => {
   const [search, setSearch] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState<any>(null);
+  const [deleteProduct, setDeleteProduct] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products"],
     queryFn: async () => {
       const { data } = await supabase.from("products").select("*, categories(name)");
+      return data ?? [];
+    },
+  });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const { data } = await supabase.from("categories").select("id, name");
       return data ?? [];
     },
   });
@@ -40,10 +60,28 @@ const ProductsPage = () => {
   });
 
   const getRecommendations = (productId: string) => {
-    return recommendations
-      .filter((r) => r.product_id === productId)
-      .map((r) => r.recommended)
-      .filter(Boolean);
+    return recommendations.filter((r) => r.product_id === productId).map((r) => r.recommended).filter(Boolean);
+  };
+
+  const handleEdit = (product: any) => {
+    setEditProduct(product);
+    setFormOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteProduct) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.from("products").delete().eq("id", deleteProduct.id);
+      if (error) throw error;
+      toast({ title: "تم الحذف", description: `تم حذف "${deleteProduct.name}" بنجاح` });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+      setDeleteProduct(null);
+    }
   };
 
   if (isLoading) {
@@ -68,7 +106,7 @@ const ProductsPage = () => {
             className="pr-9 bg-card border-border"
           />
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => { setEditProduct(null); setFormOpen(true); }}>
           <Plus className="h-4 w-4" />
           إضافة منتج
         </Button>
@@ -92,7 +130,11 @@ const ProductsPage = () => {
               <TableRow key={product.id} className="hover:bg-secondary/30 transition-colors">
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">{product.emoji}</span>
+                    {product.image_url ? (
+                      <img src={product.image_url} alt={product.name} className="w-10 h-10 rounded-lg object-cover" />
+                    ) : (
+                      <span className="text-2xl">{product.emoji}</span>
+                    )}
                     <span className="font-medium text-foreground">{product.name}</span>
                   </div>
                 </TableCell>
@@ -146,10 +188,10 @@ const ProductsPage = () => {
                         </div>
                       </DialogContent>
                     </Dialog>
-                    <button className="p-2 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
+                    <button onClick={() => handleEdit(product)} className="p-2 rounded-lg hover:bg-secondary text-muted-foreground transition-colors" title="تعديل">
                       <Edit className="h-4 w-4" />
                     </button>
-                    <button className="p-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors">
+                    <button onClick={() => setDeleteProduct(product)} className="p-2 rounded-lg hover:bg-destructive/10 text-destructive transition-colors" title="حذف">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -159,6 +201,32 @@ const ProductsPage = () => {
           </TableBody>
         </Table>
       </div>
+
+      {/* Product Form Dialog */}
+      <ProductForm
+        open={formOpen}
+        onOpenChange={(v) => { setFormOpen(v); if (!v) setEditProduct(null); }}
+        product={editProduct}
+        categories={categories}
+      />
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteProduct} onOpenChange={(v) => { if (!v) setDeleteProduct(null); }}>
+        <AlertDialogContent dir="rtl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف المنتج</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف "{deleteProduct?.name}"؟ لا يمكن التراجع عن هذا الإجراء.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row-reverse gap-2">
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "حذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 };
