@@ -9,7 +9,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar,
   SidebarContent,
@@ -34,6 +35,13 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut, role, user } = useAuth();
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/auth");
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-sidebar-border">
@@ -44,7 +52,9 @@ export function AppSidebar() {
         {!collapsed && (
           <div className="animate-slide-in">
             <h2 className="font-bold text-sidebar-accent-foreground text-sm">متجري</h2>
-            <p className="text-xs text-sidebar-muted">لوحة التحكم</p>
+            <p className="text-xs text-sidebar-muted">
+              {role === "admin" ? "مدير النظام" : role === "manager" ? "مدير" : "مستخدم"}
+            </p>
           </div>
         )}
       </div>
@@ -57,11 +67,7 @@ export function AppSidebar() {
                 const isActive = location.pathname === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      tooltip={item.title}
-                    >
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.title}>
                       <NavLink
                         to={item.url}
                         end
@@ -70,9 +76,7 @@ export function AppSidebar() {
                       >
                         <item.icon className="h-5 w-5 shrink-0" />
                         {!collapsed && <span>{item.title}</span>}
-                        {!collapsed && isActive && (
-                          <ChevronRight className="h-4 w-4 mr-auto" />
-                        )}
+                        {!collapsed && isActive && <ChevronRight className="h-4 w-4 mr-auto" />}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -84,6 +88,9 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-3">
+        {!collapsed && user && (
+          <p className="text-xs text-sidebar-muted px-3 mb-2 truncate">{user.email}</p>
+        )}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="الإعدادات">
@@ -95,7 +102,10 @@ export function AppSidebar() {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="تسجيل الخروج">
-              <button className="gap-3 px-3 py-2 rounded-lg w-full text-destructive hover:bg-destructive/10 transition-colors">
+              <button
+                onClick={handleLogout}
+                className="gap-3 px-3 py-2 rounded-lg w-full text-destructive hover:bg-destructive/10 transition-colors"
+              >
                 <LogOut className="h-5 w-5 shrink-0" />
                 {!collapsed && <span className="text-sm">تسجيل الخروج</span>}
               </button>

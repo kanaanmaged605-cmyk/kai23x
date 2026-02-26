@@ -1,23 +1,89 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { StatCard } from "@/components/StatCard";
-import { DollarSign, ShoppingCart, Users, Package, AlertTriangle, TrendingUp } from "lucide-react";
-import { salesData, categoryData, products, orders } from "@/data/mockData";
+import { DollarSign, ShoppingCart, Users, Package, AlertTriangle, TrendingUp, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from "recharts";
 
+const CHART_COLORS = [
+  "hsl(var(--chart-1))",
+  "hsl(var(--chart-2))",
+  "hsl(var(--chart-3))",
+  "hsl(var(--chart-4))",
+  "hsl(var(--chart-5))",
+];
+
 const DashboardOverview = () => {
+  const { data: products = [], isLoading: loadingProducts } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data } = await supabase.from("products").select("*, categories(name)");
+      return data ?? [];
+    },
+  });
+
+  const { data: orders = [], isLoading: loadingOrders } = useQuery({
+    queryKey: ["orders"],
+    queryFn: async () => {
+      const { data } = await supabase.from("orders").select("*").order("order_date", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const { data: customers = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: async () => {
+      const { data } = await supabase.from("customers").select("*");
+      return data ?? [];
+    },
+  });
+
+  const { data: salesData = [] } = useQuery({
+    queryKey: ["monthly_sales"],
+    queryFn: async () => {
+      const { data } = await supabase.from("monthly_sales").select("*").order("id");
+      return data ?? [];
+    },
+  });
+
+  const totalSales = salesData.reduce((s, d) => s + Number(d.sales), 0);
+  const totalOrders = salesData.reduce((s, d) => s + d.orders_count, 0);
   const lowStockProducts = products.filter((p) => p.stock <= 5);
+
+  // Category distribution
+  const categoryMap = new Map<string, number>();
+  products.forEach((p) => {
+    const cat = (p as any).categories?.name ?? "أخرى";
+    categoryMap.set(cat, (categoryMap.get(cat) ?? 0) + 1);
+  });
+  const totalProducts = products.length || 1;
+  const categoryData = Array.from(categoryMap.entries()).map(([name, count], i) => ({
+    name,
+    value: Math.round((count / totalProducts) * 100),
+    fill: CHART_COLORS[i % CHART_COLORS.length],
+  }));
+
+  if (loadingProducts || loadingOrders) {
+    return (
+      <DashboardLayout title="لوحة التحكم">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout title="لوحة التحكم">
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard title="إجمالي المبيعات" value="271,700 ر.س" change="12.5% من الشهر الماضي" changeType="up" icon={DollarSign} />
-        <StatCard title="الطلبات" value="3,162" change="8.2% من الشهر الماضي" changeType="up" icon={ShoppingCart} />
-        <StatCard title="العملاء" value="1,284" change="4.1% من الشهر الماضي" changeType="up" icon={Users} />
-        <StatCard title="المنتجات النشطة" value="156" change="2 منتج جديد" changeType="up" icon={Package} />
+        <StatCard title="إجمالي المبيعات" value={`${totalSales.toLocaleString()} ر.س`} change="من قاعدة البيانات" changeType="up" icon={DollarSign} />
+        <StatCard title="الطلبات" value={totalOrders.toLocaleString()} change={`${orders.length} طلب مسجل`} changeType="up" icon={ShoppingCart} />
+        <StatCard title="العملاء" value={customers.length.toString()} change="عميل مسجل" changeType="up" icon={Users} />
+        <StatCard title="المنتجات النشطة" value={products.length.toString()} change={`${lowStockProducts.length} مخزون منخفض`} changeType={lowStockProducts.length > 0 ? "down" : "up"} icon={Package} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
@@ -41,14 +107,7 @@ const DashboardOverview = () => {
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="month" tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
-              <Tooltip
-                contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "8px",
-                  fontSize: "12px",
-                }}
-              />
+              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }} />
               <Area type="monotone" dataKey="sales" stroke="hsl(var(--primary))" fill="url(#salesGradient)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
@@ -86,9 +145,9 @@ const DashboardOverview = () => {
         <div className="glass-card rounded-xl p-5 animate-fade-in">
           <h3 className="font-bold text-foreground mb-4">المنتجات الأكثر مبيعاً</h3>
           <div className="space-y-3">
-            {[...products].sort((a, b) => b.sold - a.sold).slice(0, 5).map((p, i) => (
+            {[...products].sort((a, b) => b.sold - a.sold).slice(0, 5).map((p) => (
               <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/50 transition-colors">
-                <span className="text-2xl">{p.image}</span>
+                <span className="text-2xl">{p.emoji}</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
                   <p className="text-xs text-muted-foreground">{p.price} ر.س</p>
@@ -99,7 +158,7 @@ const DashboardOverview = () => {
           </div>
         </div>
 
-        {/* Low Stock Alert */}
+        {/* Low Stock + Recent Orders */}
         <div className="glass-card rounded-xl p-5 animate-fade-in">
           <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-warning" />
@@ -109,7 +168,7 @@ const DashboardOverview = () => {
             <div className="space-y-3">
               {lowStockProducts.map((p) => (
                 <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg bg-warning/5 border border-warning/20">
-                  <span className="text-2xl">{p.image}</span>
+                  <span className="text-2xl">{p.emoji}</span>
                   <div className="flex-1">
                     <p className="text-sm font-medium text-foreground">{p.name}</p>
                     <p className="text-xs text-warning font-medium">متبقي {p.stock} قطع فقط</p>
@@ -121,14 +180,13 @@ const DashboardOverview = () => {
             <p className="text-muted-foreground text-sm">لا توجد تنبيهات حالياً</p>
           )}
 
-          {/* Recent Orders */}
           <h3 className="font-bold text-foreground mt-6 mb-4">آخر الطلبات</h3>
           <div className="space-y-2">
             {orders.slice(0, 4).map((order) => (
               <div key={order.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-secondary/50 transition-colors">
                 <div>
-                  <p className="text-sm font-medium text-foreground">{order.customer}</p>
-                  <p className="text-xs text-muted-foreground">{order.id}</p>
+                  <p className="text-sm font-medium text-foreground">{order.customer_name}</p>
+                  <p className="text-xs text-muted-foreground">{order.order_number}</p>
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-bold text-foreground">{order.total} ر.س</p>

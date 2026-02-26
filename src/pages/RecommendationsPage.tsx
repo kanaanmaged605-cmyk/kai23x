@@ -1,8 +1,38 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { products, recommendations } from "@/data/mockData";
-import { Sparkles, ArrowLeftRight } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { Sparkles, ArrowLeftRight, Loader2 } from "lucide-react";
 
 const RecommendationsPage = () => {
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data } = await supabase.from("products").select("*, categories(name)");
+      return data ?? [];
+    },
+  });
+
+  const { data: recommendations = [] } = useQuery({
+    queryKey: ["product_recommendations_full"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("product_recommendations")
+        .select("*, recommended:products!product_recommendations_recommended_product_id_fkey(id, name, emoji, price)")
+        .order("frequency", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <DashboardLayout title="نظام التوصيات">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout title="نظام التوصيات">
       {/* Algorithm Info */}
@@ -17,7 +47,7 @@ const RecommendationsPage = () => {
               يعتمد النظام على تحليل سجل المشتريات لاستخراج المنتجات الأكثر شراءً معاً
               باستخدام <span className="text-primary font-medium">Association Rules</span> و
               <span className="text-primary font-medium"> Cosine Similarity</span>.
-              يتم حساب معدل التكرار (Frequency) لكل زوج من المنتجات التي تظهر في نفس الطلب.
+              البيانات محفوظة في قاعدة البيانات الحقيقية.
             </p>
           </div>
         </div>
@@ -40,16 +70,17 @@ ORDER BY frequency DESC;`}
       {/* Recommendations Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {products.map((product) => {
-          const recIds = recommendations[product.id] || [];
-          const recs = recIds.map((id) => products.find((p) => p.id === id)).filter(Boolean);
+          const recs = recommendations
+            .filter((r) => r.product_id === product.id)
+            .map((r) => ({ ...r.recommended, frequency: r.frequency, similarity_score: r.similarity_score }));
 
           return (
             <div key={product.id} className="glass-card rounded-xl p-5 animate-fade-in">
               <div className="flex items-center gap-3 mb-4">
-                <span className="text-3xl">{product.image}</span>
+                <span className="text-3xl">{product.emoji}</span>
                 <div>
                   <p className="font-bold text-foreground">{product.name}</p>
-                  <p className="text-xs text-muted-foreground">{product.category} — {product.price} ر.س</p>
+                  <p className="text-xs text-muted-foreground">{(product as any).categories?.name ?? "—"} — {product.price} ر.س</p>
                 </div>
               </div>
 
@@ -59,18 +90,27 @@ ORDER BY frequency DESC;`}
               </div>
 
               <div className="space-y-2">
-                {recs.map((rec) => rec && (
+                {recs.length > 0 ? recs.map((rec: any) => (
                   <div key={rec.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-secondary/50">
-                    <span className="text-xl">{rec.image}</span>
+                    <span className="text-xl">{rec.emoji}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{rec.name}</p>
                       <p className="text-xs text-muted-foreground">{rec.price} ر.س</p>
                     </div>
-                    <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full font-medium">
-                      مقترح
-                    </span>
+                    <div className="text-left">
+                      <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full font-medium">
+                        {rec.frequency}×
+                      </span>
+                      {rec.similarity_score && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          تشابه: {(Number(rec.similarity_score) * 100).toFixed(0)}%
+                        </p>
+                      )}
+                    </div>
                   </div>
-                ))}
+                )) : (
+                  <p className="text-muted-foreground text-sm text-center py-2">لا توجد توصيات</p>
+                )}
               </div>
             </div>
           );
